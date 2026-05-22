@@ -1,110 +1,72 @@
 import lexer.Lexer;
 import lexer.Token;
-import lexer.TokenType;
-
+import parser.*;
+import visualizer.WebVisualizer;
 import java.util.List;
 
-/**
- * 词法分析器入口类（Main）
- *
- * 包含一段示例源程序，调用 Lexer 进行分析并打印结果。
- */
 public class Main {
 
     public static void main(String[] args) {
-
-        // ============================================================
-        // 示例源程序（模拟一段 C 风格代码）
-        // ============================================================
+        // 源代码：包含可以被优化的部分，如 5 * 2
         String sourceCode =
-                "// 计算阶乘的函数\n" +
-                "int factorial(int n) {\n" +
-                "    if (n <= 1) {\n" +
-                "        return 1;\n" +
-                "    } else {\n" +
-                "        return n * factorial(n - 1);\n" +
-                "    }\n" +
-                "}\n" +
-                "\n" +
-                "/* 主函数 */\n" +
                 "int main() {\n" +
-                "    int result = factorial(5);\n" +
-                "    float pi = 3.14;\n" +
-                "    char grade = 'A';\n" +
-                "    bool flag = true;\n" +
-                "    // 输出结果\n" +
-                "    int x = 10;\n" +
-                "    int y = x + 2;\n" +
-                "    if (x >= y || flag != false) {\n" +
-                "        x++;\n" +
-                "    }\n" +
-                "    return 0;\n" +
-                "}\n";
+                        "    int a;\n" +
+                        "    int b;\n" +
+                        "    a = 5 * 2 + 10;\n" + // 这里可以被优化
+                        "    b = a;\n" +
+                        "}";
 
-        // ============================================================
-        // 执行词法分析
-        // ============================================================
-        System.out.println("========================================");
-        System.out.println("         词法分析器 输出结果             ");
-        System.out.println("========================================");
-        System.out.println();
-
+        System.out.println("--- [1] 词法分析 ---");
         Lexer lexer = new Lexer(sourceCode);
         List<Token> tokens = lexer.tokenize();
 
-        // ============================================================
-        // 打印所有 Token（二元式）
-        // ============================================================
-        int index = 1;
-        for (Token token : tokens) {
-            // EOF 单独输出
-            if (token.getType() == TokenType.EOF) {
-                System.out.println("----------------------------------------");
-                System.out.printf("[%3d] %s%n", index++, token);
-                break;
+        System.out.println("\n--- [2] LL(1) 理论计算 ---");
+        LL1Analyzer analyzer = new LL1Analyzer();
+        analyzer.addProduction("Program", "int", "main", "(", ")", "{", "StmtList", "}");
+        analyzer.addProduction("StmtList", "Stmt", "StmtList");
+        analyzer.addProduction("StmtList", "ε");
+        analyzer.addProduction("Stmt", "Decl");
+        analyzer.addProduction("Stmt", "Assign");
+        analyzer.addProduction("Decl", "int", "id", ";");
+        analyzer.addProduction("Assign", "id", "=", "Expr", ";");
+        analyzer.addProduction("Expr", "Term", "ExprP");
+        analyzer.addProduction("ExprP", "+", "Term", "ExprP");
+        analyzer.addProduction("ExprP", "ε");
+        analyzer.addProduction("Term", "id");
+        analyzer.addProduction("Term", "num");
+
+        analyzer.computeFirst();
+        analyzer.computeFollow("Program");
+        analyzer.buildTable();
+        analyzer.printTableGrid();
+
+        System.out.println("\n--- [3] 语法分析与原始中间代码 ---");
+        Parser parser = new Parser(tokens);
+        TreeNode root = null;
+        try {
+            root = parser.parse();
+            System.out.println("原始四元式序列:");
+            parser.printQuads();
+
+            // ==========================================
+            // 新增：[阶段 4] 优化器 (Optimization)
+            // ==========================================
+            System.out.println("\n--- [4] 优化器 (常量合并与传播) ---");
+            List<Quadruple> rawQuads = parser.getQuads();
+            List<Quadruple> optimizedQuads = Optimizer.optimize(rawQuads);
+
+            System.out.println("优化后的四元式序列:");
+            for (int i = 0; i < optimizedQuads.size(); i++) {
+                System.out.println(i + ": " + optimizedQuads.get(i));
             }
-            System.out.printf("[%3d] %s%n", index++, token);
-        }
 
-        // ============================================================
-        // 打印统计信息
-        // ============================================================
-        System.out.println();
-        System.out.println("========================================");
-        System.out.println("              统计信息                  ");
-        System.out.println("========================================");
-        printStatistics(tokens);
+            System.out.println("\n--- [5] 生成高级可视化报告 ---");
+            // 注意：现在传 5 个参数
+            WebVisualizer.generateReport(tokens, analyzer, root, rawQuads, optimizedQuads);
 
-        // ============================================================
-        // 打印词法错误（如有）
-        // ============================================================
-        List<String> errors = lexer.getErrors();
-        if (!errors.isEmpty()) {
-            System.out.println();
-            System.out.println("========================================");
-            System.out.println("              词法错误                  ");
-            System.out.println("========================================");
-            errors.forEach(System.out::println);
-        } else {
-            System.out.println();
-            System.out.println("✓ 词法分析完成，无错误。");
+        } catch (Exception e) {
+            System.err.println("解析出错: " + e.getMessage());
+            e.printStackTrace();
         }
-    }
-
-    /**
-     * 统计各类 Token 数量并打印
-     */
-    private static void printStatistics(List<Token> tokens) {
-        int[] counts = new int[TokenType.values().length];
-        for (Token t : tokens) {
-            counts[t.getType().ordinal()]++;
-        }
-        for (TokenType type : TokenType.values()) {
-            int cnt = counts[type.ordinal()];
-            if (cnt > 0) {
-                System.out.printf("  %-12s : %d 个%n", type, cnt);
-            }
-        }
-        System.out.printf("  %-12s : %d 个%n", "合计(含EOF)", tokens.size());
     }
 }
