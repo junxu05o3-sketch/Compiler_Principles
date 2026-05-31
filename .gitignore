@@ -1,0 +1,15 @@
+# 编译输出
+out/
+
+# IDE
+.idea/
+
+# 操作系统
+Thumbs.db
+Desktop.ini
+~$*
+
+# Java
+*.class
+*.jar
+*.war
